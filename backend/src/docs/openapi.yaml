@@ -60,6 +60,7 @@ tags:
   - name: Treasury
   - name: Goals
   - name: Stellar
+  - name: Cooperatives
 components:
   securitySchemes:
     bearerAuth:
@@ -233,6 +234,91 @@ components:
         pattern: "^[a-zA-Z0-9._-]+$"
       example: beta
   schemas:
+    PilotRegisterRequest:
+      type: object
+      required:
+        - name
+        - adminWallet
+        - contactEmail
+        - region
+      properties:
+        name:
+          type: string
+          example: Northern Farmers Alliance
+        adminWallet:
+          type: string
+          example: GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVWGS
+        contactEmail:
+          type: string
+          format: email
+          example: admin@northernfarmers.org
+        region:
+          type: string
+          example: Kaduna
+        description:
+          type: string
+          example: Regional grain producers cooperative
+        estimatedMembers:
+          type: integer
+          example: 120
+    PilotCooperativeRecord:
+      type: object
+      required:
+        - id
+        - name
+        - adminWallet
+        - contactEmail
+        - region
+        - trialPeriod
+        - isTrialPeriod
+        - trialDays
+        - trialEndsAt
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          example: coop-pilot-12345
+        name:
+          type: string
+          example: Northern Farmers Alliance
+        adminWallet:
+          type: string
+          example: ga7qynf7sowq3glr2bgmzehxavirza4kvwltjjfc7mgxua74p7ujvwgs
+        contactEmail:
+          type: string
+          example: admin@northernfarmers.org
+        region:
+          type: string
+          example: Kaduna
+        description:
+          type: string
+          example: Regional grain producers cooperative
+        estimatedMembers:
+          type: integer
+          example: 120
+        trialPeriod:
+          type: boolean
+          example: true
+        isTrialPeriod:
+          type: boolean
+          example: true
+        trialDays:
+          type: integer
+          example: 90
+        trialEndsAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          example: ACTIVE
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     ErrorEnvelope:
       type: object
       properties:
@@ -1163,6 +1249,28 @@ components:
               - $ref: "#/components/schemas/ErrorEnvelope"
               - $ref: "#/components/schemas/AppErrorResponse"
 paths:
+  /api/cooperatives/pilot-register:
+    post:
+      tags: [Cooperatives]
+      summary: Register a regional cooperative for the Phase 4 pilot program
+      description: Creates a new pilot cooperative record with an active trial-period flag.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PilotRegisterRequest"
+      responses:
+        "201":
+          description: Cooperative registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PilotCooperativeRecord"
+        "400":
+          $ref: "#/components/responses/LegacyValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/admin/audit:
     get:
       tags: [Admin]
