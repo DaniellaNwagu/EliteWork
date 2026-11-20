@@ -24,6 +24,7 @@ function createMockTradeService() {
   return {
     createPendingTrade: jest.spyOn(TradeService.prototype, "createPendingTrade"),
     getTradeById: jest.spyOn(TradeService.prototype, "getTradeById"),
+    listUserTrades: jest.spyOn(TradeService.prototype, "listUserTrades"),
   };
 }
 
@@ -44,6 +45,7 @@ function makeTrade(overrides: Partial<Trade> = {}): Trade {
     buyerAddress: "",
     sellerAddress: "",
     amountUsdc: "125.1234567",
+    commodity: null,
     buyerLossBps: 5000,
     sellerLossBps: 5000,
     version: 0,
@@ -107,6 +109,10 @@ describe("Trade Routes", () => {
     jest.spyOn(AuthService, "isTokenRevoked").mockResolvedValue(false);
     mockTradeService.createPendingTrade.mockReset();
     mockTradeService.getTradeById.mockReset().mockResolvedValue(null);
+    mockTradeService.listUserTrades.mockReset().mockResolvedValue({
+      items: [],
+      pagination: { page: 1, limit: 20, total: 0, totalPages: 1 },
+    });
     mockContractService.buildCreateTradeTx.mockReset();
     mockContractService.buildDepositTx.mockReset();
   });
@@ -153,6 +159,7 @@ describe("Trade Routes", () => {
       amountUsdc: "125.1234567",
       buyerLossBps: expect.any(Number),
       sellerLossBps: expect.any(Number),
+      commodity: null,
     });
   });
 
@@ -172,6 +179,41 @@ describe("Trade Routes", () => {
     expect(res.body.code).toBe("VALIDATION_ERROR");
   });
 
+  describe("GET /trades search (#504)", () => {
+    it("forwards q to the service alongside the caller's filters", async () => {
+      const res = await request(app)
+        .get("/trades?q=maize&page=2&limit=10")
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(mockTradeService.listUserTrades).toHaveBeenCalledWith(
+        buyerAddress,
+        expect.objectContaining({ q: "maize", page: 2, limit: 10 }),
+      );
+    });
+
+    it("treats a blank q as no search filter", async () => {
+      const res = await request(app)
+        .get("/trades?q=%20%20")
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(mockTradeService.listUserTrades).toHaveBeenCalledWith(
+        buyerAddress,
+        expect.objectContaining({ q: undefined }),
+      );
+    });
+
+    it("rejects a q longer than 100 characters", async () => {
+      const res = await request(app)
+        .get(`/trades?q=${"a".repeat(101)}`)
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(400);
+      expect(mockTradeService.listUserTrades).not.toHaveBeenCalled();
+    });
+  });
+
   it("returns 401 without auth", async () => {
     const res = await request(app).post("/trades").send({
       sellerAddress,
@@ -179,7 +221,9 @@ describe("Trade Routes", () => {
     });
 
     expect(res.status).toBe(401);
-    expect(res.body.error).toBe("Unauthorized");
+    // Structured auth error from AuthHelper: the peer-visible message names the
+    // missing header instead of the old generic "Unauthorized".
+    expect(res.body.error).toBe("Missing Authorization header");
   });
 
   it("returns unsignedXdr for a valid buyer deposit request", async () => {

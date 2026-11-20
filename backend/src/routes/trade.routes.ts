@@ -93,13 +93,14 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
       }
 
       try {
-        const { status, page, limit, sort } = req.query as any;
+        const { status, page, limit, sort, q } = req.query as any;
 
         const result = await tradeService.listUserTrades(callerAddress, {
           status,
           page,
           limit,
           sort,
+          q,
         });
 
         res.status(200).json(result);

@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { NavButton } from "@/components/ui/Navigation";
 import { VirtualizedList } from "@/components/ui/VirtualizedList";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 type TradeStatus = "all" | "active" | "pending" | "completed" | "disputed";
 
@@ -69,6 +70,10 @@ export default function TradesPage() {
   const { trackApiFailure, trackFunnelStep } = useAnalytics();
   const { addToast } = useToast();
   const [activeFilter, setActiveFilter] = useState<TradeStatus>("all");
+  const [searchInput, setSearchInput] = useState("");
+  // #505: debounce at 300 ms so results update live without one request per
+  // keystroke. The backend matches commodity and counterparty name.
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
   const [page, setPage] = useState(1);
   const [trades, setTrades] = useState<TradeResponse[]>([]);
   const [totalPages, setTotalPages] = useState(1);
@@ -76,7 +81,10 @@ export default function TradesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    trackFunnelStep("trade_page_view", { filter: activeFilter });
+    trackFunnelStep("trade_page_view", {
+      filter: activeFilter,
+      hasSearch: debouncedSearch.trim().length > 0,
+    });
 
     async function fetchTrades() {
       if (!isAuthenticated || !token) {
@@ -93,6 +101,7 @@ export default function TradesPage() {
           status: statusParam,
           page,
           limit: PAGE_SIZE,
+          q: debouncedSearch.trim() || undefined,
         });
 
         setTrades(response.items);
@@ -108,7 +117,11 @@ export default function TradesPage() {
           errorMessage = err.message;
         }
 
-        trackApiFailure("/trades", status, { message: errorMessage, filter: activeFilter });
+        trackApiFailure("/trades", status, {
+          message: errorMessage,
+          filter: activeFilter,
+          hasSearch: debouncedSearch.trim().length > 0,
+        });
         setError(errorMessage);
       } finally {
         setLoading(false);
@@ -116,10 +129,16 @@ export default function TradesPage() {
     }
 
     fetchTrades();
-  }, [token, isAuthenticated, activeFilter, page, trackApiFailure, trackFunnelStep]);
+  }, [token, isAuthenticated, activeFilter, page, debouncedSearch, trackApiFailure, trackFunnelStep]);
 
   function handleFilter(value: TradeStatus) {
     setActiveFilter(value);
+    setPage(1);
+  }
+
+  function handleSearchChange(value: string) {
+    setSearchInput(value);
+    // Reset pagination immediately; the request itself waits for the debounce.
     setPage(1);
   }
 
@@ -180,6 +199,24 @@ export default function TradesPage() {
         </Link>
       </div>
 
+      {/* Search (#505): debounced free-text filter over commodity/counterparty */}
+      <div className="mb-4">
+        <label htmlFor="trade-search" className="sr-only">
+          Search trades
+        </label>
+        <div className="relative">
+          <input
+            id="trade-search"
+            type="search"
+            value={searchInput}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search by commodity or counterparty"
+            aria-label="Search trades by commodity or counterparty"
+            className="w-full rounded-md border border-border-default bg-bg-input px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border-focus"
+          />
+        </div>
+      </div>
+
       {/* Filter tabs */}
       <div className="mb-6" role="tablist" aria-label="Trade filters">
         <div className="flex items-center gap-2">
@@ -238,19 +275,26 @@ export default function TradesPage() {
 
               {/* Heading */}
               <h3 className="text-xl font-semibold text-text-primary mb-3">
-                No trades yet
+                {debouncedSearch.trim() ? "No matching trades" : "No trades yet"}
               </h3>
 
               {/* Description */}
               <p className="text-text-secondary text-sm mb-8 max-w-sm mx-auto leading-relaxed">
-                Get started by creating your first trade to begin settling
-                agricultural transactions securely on the blockchain.
+                {debouncedSearch.trim()
+                  ? `No trades match “${debouncedSearch.trim()}”. Try a different commodity or counterparty.`
+                  : "Get started by creating your first trade to begin settling agricultural transactions securely on the blockchain."}
               </p>
 
               {/* CTA Button */}
-              <Link href="/trades/create">
-                <Button variant="primary" size="lg">Create Your First Trade</Button>
-              </Link>
+              {debouncedSearch.trim() ? (
+                <Button variant="secondary" size="lg" onClick={() => handleSearchChange("")}>
+                  Clear search
+                </Button>
+              ) : (
+                <Link href="/trades/create">
+                  <Button variant="primary" size="lg">Create Your First Trade</Button>
+                </Link>
+              )}
             </div>
           ) : (
             <div className="rounded-lg border border-border-default overflow-hidden shadow-elev-1">

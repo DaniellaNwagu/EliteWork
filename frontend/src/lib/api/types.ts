@@ -11,6 +11,8 @@ export interface TradeResponse {
   buyerAddress: string;
   sellerAddress: string;
   amountCngn: string;
+  /** Off-chain commodity label (e.g. "Maize"); optional on older trades. */
+  commodity?: string | null;
   buyerLossBps: number;
   sellerLossBps: number;
   status: string;
@@ -72,6 +74,8 @@ export interface CreateTradeRequest {
   amountUsdc: string;
   buyerLossBps: number;
   sellerLossBps: number;
+  /** Persisted for trade search (#504). */
+  commodity?: string;
 }
 
 export interface CreateTradeResponse {
