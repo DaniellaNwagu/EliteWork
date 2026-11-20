@@ -6,6 +6,11 @@ import {
   toPoolExhaustionAppError,
 } from "../lib/dbPoolErrors";
 import { ContractService } from "./contract.service";
+import {
+  createTradeSearchIndex,
+  normalizeTradeSearchQuery,
+  type TradeSearchIndex,
+} from "./tradeSearch.service";
 import { appLogger } from "../middleware/logger";
 import { TracingHelper } from "../config/tracing";
 import { formatStroopsToDecimal, parseDecimalToStroops } from "../lib/money";
@@ -41,6 +46,8 @@ export interface CreatePendingTradeInput {
   amountUsdc: string;
   buyerLossBps: number;
   sellerLossBps: number;
+  /** Optional off-chain commodity label; also indexed for search (#504). */
+  commodity?: string | null;
 }
 
 export type TradeListFilters = {
@@ -48,6 +55,8 @@ export type TradeListFilters = {
   page?: number;
   limit?: number;
   sort?: string;
+  /** Free-text query over commodity and counterparty name (#504). */
+  q?: string;
 };
 
 type TradeDatabase = Pick<PrismaClient, "trade" | "dispute" | "disputeCategory"> &
@@ -81,6 +90,7 @@ export class TradeService {
   constructor(
     private readonly prisma: TradeDatabase = defaultPrisma,
     private readonly contractService: ContractService = new ContractService(),
+    private readonly tradeSearch: TradeSearchIndex = createTradeSearchIndex(),
   ) { }
 
   async createPendingTrade(input: CreatePendingTradeInput): Promise<Trade> {
@@ -124,6 +134,17 @@ export class TradeService {
     // DB side (the on-chain TradeCreated event handler records "created" again
     // once the tx is confirmed, keeping both counts for reconciliation).
     recordTradeFunnelEvent("created");
+
+    // Best-effort search index write (#504). `indexTrade` never throws, and it
+    // is intentionally not awaited: a slow/unavailable Supabase index must not
+    // add latency to the escrow creation path.
+    void this.tradeSearch.indexTrade({
+      tradeId: trade.tradeId,
+      buyerAddress: trade.buyerAddress,
+      sellerAddress: trade.sellerAddress,
+      commodity: trade.commodity ?? input.commodity ?? null,
+    });
+
     return trade;
   }
 
@@ -137,6 +158,25 @@ export class TradeService {
       OR: [{ buyerAddress: address }, { sellerAddress: address }],
       ...(filters.status ? { status: filters.status } : {}),
     };
+
+    // #504: free-text search. Supabase resolves the query against its
+    // full-text index; when that index is unavailable (`null`) fall back to a
+    // database-side substring match so local/dev environments still work.
+    const search = this.normalizeQuery(filters.q);
+    const matchedIds = search ? await this.tradeSearch.searchTradeIds(search) : null;
+    if (search && matchedIds && matchedIds.length === 0) {
+      return {
+        items: [],
+        pagination: { page, limit, total: 0, totalPages: 1 },
+      };
+    }
+    if (search && matchedIds) {
+      where.tradeId = { in: matchedIds };
+    } else if (search) {
+      where.AND = [this.buildSubstringSearchFilter(search)];
+    }
+    const matchesSearch = (trade: Trade): boolean =>
+      !search || (matchedIds ? matchedIds.includes(trade.tradeId) : this.matchesSubstringSearch(trade, search));
 
     const watchlist = this.prisma.userWatchlist;
     if (watchlist) {
@@ -154,8 +194,10 @@ export class TradeService {
       ]);
       const watched = entries
         .map((entry) => entry.trade)
-        .filter((trade) =>
-          !filters.status || trade.status === filters.status,
+        .filter(
+          (trade) =>
+            (!filters.status || trade.status === filters.status) &&
+            matchesSearch(trade),
         );
       const watchedIds = watched.map((trade) => trade.tradeId);
       const watchedPage = watched.slice(skip, skip + limit);
@@ -202,6 +244,35 @@ export class TradeService {
         totalPages: Math.max(1, Math.ceil(total / limit)),
       },
     };
+  }
+
+  /** Trim/cap a raw `q`; returns undefined for blank input. */
+  private normalizeQuery(raw: string | undefined): string | undefined {
+    if (!raw) return undefined;
+    const normalized = normalizeTradeSearchQuery(raw);
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  /**
+   * Substring fallback used only when the Supabase index is unreachable.
+   * Counterparty display names are not in the Prisma schema, so the fallback
+   * covers the commodity label and the trade id.
+   */
+  private buildSubstringSearchFilter(query: string): Prisma.TradeWhereInput {
+    return {
+      OR: [
+        { commodity: { contains: query, mode: "insensitive" } },
+        { tradeId: { contains: query, mode: "insensitive" } },
+      ],
+    };
+  }
+
+  private matchesSubstringSearch(trade: Trade, query: string): boolean {
+    const needle = query.toLowerCase();
+    return (
+      (trade.commodity ?? "").toLowerCase().includes(needle) ||
+      trade.tradeId.toLowerCase().includes(needle)
+    );
   }
 
   async getTradeById(id: string, callerAddress: string) {

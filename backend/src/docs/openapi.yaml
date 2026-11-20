@@ -195,6 +195,15 @@ components:
       schema:
         type: string
       example: createdAt:desc
+    ListTradesSearchQuery:
+      in: query
+      name: q
+      required: false
+      description: Free-text search over the trade's commodity label and the counterparty display name, matched with the Supabase full-text index (websearch syntax). Blank values are treated as no filter.
+      schema:
+        type: string
+        maxLength: 100
+      example: maize
     IncludeInactiveCategoriesQuery:
       in: query
       name: includeInactive
@@ -767,6 +776,10 @@ components:
           type: integer
           minimum: 0
           maximum: 10000
+        commodity:
+          type: string
+          maxLength: 100
+          description: Optional off-chain commodity label used for trade search.
       required: [sellerAddress, amountUsdc, buyerLossBps, sellerLossBps]
       example:
         sellerAddress: GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBC4
@@ -2215,6 +2228,7 @@ paths:
         - $ref: "#/components/parameters/ListTradesPageQuery"
         - $ref: "#/components/parameters/ListTradesLimitQuery"
         - $ref: "#/components/parameters/ListTradesSortQuery"
+        - $ref: "#/components/parameters/ListTradesSearchQuery"
       responses:
         "200":
           description: Paginated trade list returned.

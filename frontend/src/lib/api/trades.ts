@@ -14,12 +14,20 @@ import type {
 } from "./types";
 
 export const tradesApi = {
-  list: (token: string, params?: { status?: string; page?: number; limit?: number }) =>
+  /**
+   * `q` is the free-text search query (#504) matched against commodity and
+   * counterparty name by the backend's Supabase full-text index.
+   */
+  list: (
+    token: string,
+    params?: { status?: string; page?: number; limit?: number; q?: string },
+  ) =>
     request<TradeListResponse>(
       `/trades${createQueryString({
         status: params?.status,
         page: params?.page,
         limit: params?.limit,
+        q: params?.q,
       })}`,
       { token },
     ),
