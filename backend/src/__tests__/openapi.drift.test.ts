@@ -114,6 +114,7 @@ const IMPLEMENTED_ROUTES = [
   "/api/admin/streams/{id}/terminate",
   "/disputes",
   "/disputes/{id}/transition",
+  "/api/cooperatives/pilot-register",
 ];
 
 describe("OpenAPI drift detection", () => {
