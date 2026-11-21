@@ -40,6 +40,14 @@ describe("computeBufferedFee", () => {
     expect(e.cappedAtMax).toBe(false);
   });
 
+  it("rounds a fractional buffered fee up to the next stroop", () => {
+    const e = computeBufferedFee(
+      feeStats({ fee_charged: { p90: "101" } }),
+      OPTS,
+    );
+    expect(e.bufferedFee).toBe(152); // ceil(101 * 1.5)
+  });
+
   it("boosts the multiplier when ledger capacity usage is high", () => {
     const e = computeBufferedFee(feeStats({ ledger_capacity_usage: "0.9" }), OPTS);
     expect(e.congested).toBe(true);
