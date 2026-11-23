@@ -204,10 +204,21 @@
           ]
         }
       },
+      "ListTradesCursorQuery": {
+        "in": "query",
+        "name": "cursor",
+        "required": false,
+        "description": "Opaque cursor from a previous response's `pageInfo.nextCursor`. Pass it back verbatim to load the next page. When `cursor` is sent (or `page` is omitted) the response uses the cursor envelope `{ items, pageInfo }`.",
+        "schema": {
+          "type": "string"
+        }
+      },
       "ListTradesPageQuery": {
         "in": "query",
         "name": "page",
         "required": false,
+        "deprecated": true,
+        "description": "Legacy offset pagination, kept only for un-migrated clients. Prefer `cursor`; offset requests receive a deprecation `Warning` header and a `pagination` object instead of `pageInfo`.",
         "schema": {
           "type": "integer",
           "minimum": 1,
@@ -1291,6 +1302,53 @@
             "items": {
               "$ref": "#/components/schemas/TradeSummary"
             }
+          },
+          "pageInfo": {
+            "type": "object",
+            "description": "Present in cursor mode (the default, and whenever `cursor` is sent).",
+            "properties": {
+              "nextCursor": {
+                "type": "string",
+                "nullable": true,
+                "description": "Pass as `cursor` to load the next page; null on the last page."
+              },
+              "hasNextPage": {
+                "type": "boolean"
+              },
+              "limit": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "nextCursor",
+              "hasNextPage",
+              "limit"
+            ]
+          },
+          "pagination": {
+            "type": "object",
+            "deprecated": true,
+            "description": "Legacy offset envelope returned only when `page` is supplied without a cursor.",
+            "properties": {
+              "page": {
+                "type": "integer"
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "total": {
+                "type": "integer"
+              },
+              "totalPages": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "page",
+              "limit",
+              "total",
+              "totalPages"
+            ]
           }
         },
         "required": [
@@ -3549,7 +3607,7 @@
           "Trades"
         ],
         "summary": "List the authenticated user's trades",
-        "description": "Error code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `INTERNAL_ERROR`.",
+        "description": "Cursor-paginated by default: send `cursor` (from the previous page's `pageInfo.nextCursor`) and read `pageInfo` for the next one. The caller's watchlisted trades are still returned first. The legacy `page` parameter is deprecated and switches the response to the old `pagination` envelope.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `INTERNAL_ERROR`.",
         "security": [
           {
             "bearerAuth": []
@@ -3558,6 +3616,9 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/ListTradesStatusQuery"
+          },
+          {
+            "$ref": "#/components/parameters/ListTradesCursorQuery"
           },
           {
             "$ref": "#/components/parameters/ListTradesPageQuery"
@@ -3672,6 +3733,53 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          }
+        }
+      }
+    },
+    "/trades/{id}/receipt": {
+      "get": {
+        "tags": [
+          "Trades"
+        ],
+        "summary": "Download a trade receipt PDF",
+        "description": "Returns a one-page PDF receipt for a trade the caller is party to. The receipt includes the trade id, parties, amount, status, and a QR code linking to the on-chain record (or a stellar.expert lookup when there is no settlement transaction yet). Used by the web download button and the mobile share sheet.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TradeIdPath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trade receipt PDF returned.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/LegacyValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
           }
         }
       }
