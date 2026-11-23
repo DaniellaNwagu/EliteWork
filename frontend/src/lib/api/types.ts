@@ -26,9 +26,19 @@ export interface TradeResponse {
   deliveryDays?: number;
 }
 
+/** Cursor pagination metadata for `GET /trades` (#502). */
+export interface TradeListPageInfo {
+  nextCursor: string | null;
+  hasNextPage: boolean;
+  limit: number;
+}
+
 export interface TradeListResponse {
   items: TradeResponse[];
-  pagination: {
+  /** Present in cursor mode — the default, and whenever a `cursor` is sent. */
+  pageInfo?: TradeListPageInfo;
+  /** @deprecated legacy offset envelope returned only when `page` is sent. */
+  pagination?: {
     page: number;
     limit: number;
     total: number;
