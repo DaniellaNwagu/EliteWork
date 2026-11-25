@@ -19,7 +19,7 @@ import {
 import { RATE_LIMIT_CONFIG } from "../config/rateLimit";
 import { createWalletRateLimiter } from "../lib/rateLimit";
 import { CURSOR_DEPRECATION_WARNING, InvalidCursorError } from "../lib/cursorPagination";
-import { generateTradeReceiptPdf } from "../services/tradeReceipt.service";
+import { buildTradeReceiptJson, generateTradeReceiptPdf } from "../services/tradeReceipt.service";
 
 export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
   const router = Router();
@@ -204,10 +204,11 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
   );
 
   /**
-   * Trade receipt PDF (#500). Backs the frontend's download button and the
+   * Trade receipt (#500, #499). Backs the frontend's download button and the
    * mobile share sheet; any party to the trade may fetch it. The receipt is a
-   * snapshot of the off-chain record plus a QR link to the on-chain settlement
-   * when one exists — see `tradeReceipt.service.ts`.
+   * snapshot of the off-chain record plus a QR/link to the on-chain settlement
+   * when one exists — see `tradeReceipt.service.ts`. Defaults to PDF; pass
+   * `?format=json` for the machine-readable receipt used by integrations.
    */
   router.get(
     "/:id/receipt",
@@ -221,6 +222,12 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
       }
 
       try {
+        const format = String(req.query.format ?? "pdf").toLowerCase();
+        if (format !== "pdf" && format !== "json") {
+          res.status(400).json({ error: "format must be 'pdf' or 'json'" });
+          return;
+        }
+
         const tradeId = req.params.id as string;
         const trade = await tradeService.getTradeById(tradeId, callerAddress);
         if (!trade) {
@@ -239,19 +246,28 @@ export function createTradeRouter(prisma: PrismaClient = defaultPrisma) {
 
         const network =
           process.env.STELLAR_NETWORK?.toLowerCase() === "mainnet" ? "mainnet" : "testnet";
-        const pdf = await generateTradeReceiptPdf(
-          {
-            tradeId: trade.tradeId,
-            buyerAddress: trade.buyerAddress,
-            sellerAddress: trade.sellerAddress,
-            amountUsdc: trade.amountUsdc,
-            status: trade.status,
-            createdAt: trade.createdAt,
-            completedAt: trade.completedAt,
-            txHash: latestPayout?.txHash ?? null,
-          },
-          network,
-        );
+        const receipt = {
+          tradeId: trade.tradeId,
+          buyerAddress: trade.buyerAddress,
+          sellerAddress: trade.sellerAddress,
+          amountUsdc: trade.amountUsdc,
+          status: trade.status,
+          createdAt: trade.createdAt,
+          completedAt: trade.completedAt,
+          txHash: latestPayout?.txHash ?? null,
+        };
+
+        if (format === "json") {
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="trade-${trade.tradeId}-receipt.json"`,
+          );
+          res.status(200).json(buildTradeReceiptJson(receipt, network));
+          return;
+        }
+
+        const pdf = await generateTradeReceiptPdf(receipt, network);
 
         res.setHeader("Content-Type", "application/pdf");
         res.setHeader(

@@ -33,11 +33,15 @@ jest.mock("../lib/db", () => ({
   },
 }));
 
-jest.mock("../services/tradeReceipt.service", () => ({
-  generateTradeReceiptPdf: jest
-    .fn()
-    .mockResolvedValue(Buffer.from("%PDF-1.4 test receipt")),
-}));
+jest.mock("../services/tradeReceipt.service", () => {
+  const actual = jest.requireActual("../services/tradeReceipt.service");
+  return {
+    ...actual,
+    generateTradeReceiptPdf: jest
+      .fn()
+      .mockResolvedValue(Buffer.from("%PDF-1.4 test receipt")),
+  };
+});
 
 function createMockTradeService() {
   return {
@@ -311,6 +315,39 @@ describe("Trade Routes", () => {
         expect.objectContaining({ tradeId: "42", status: TradeStatus.COMPLETED }),
         expect.any(String),
       );
+    });
+
+    it("returns a JSON attachment when format=json (#499)", async () => {
+      mockTradeService.getTradeById.mockResolvedValueOnce(
+        makeTrade({ tradeId: "42", status: TradeStatus.COMPLETED }),
+      );
+
+      const res = await request(app)
+        .get("/trades/42/receipt?format=json")
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("application/json");
+      expect(res.headers["content-disposition"]).toContain("trade-42-receipt.json");
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          tradeId: "42",
+          amountUsdc: "125.1234567",
+          status: TradeStatus.COMPLETED,
+          completedAt: null,
+          txHash: null,
+          network: "testnet",
+        }),
+      );
+    });
+
+    it("rejects an unsupported format", async () => {
+      const res = await request(app)
+        .get("/trades/42/receipt?format=xml")
+        .set("Authorization", `Bearer ${token}`);
+
+      expect(res.status).toBe(400);
+      expect(mockTradeService.getTradeById).not.toHaveBeenCalled();
     });
 
     it("returns 404 when the trade does not exist", async () => {
