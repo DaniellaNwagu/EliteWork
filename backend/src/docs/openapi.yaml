@@ -2434,20 +2434,69 @@ paths:
   /trades/{id}/receipt:
     get:
       tags: [Trades]
-      summary: Download a trade receipt PDF
-      description: "Returns a one-page PDF receipt for a trade the caller is party to. The receipt includes the trade id, parties, amount, status, and a QR code linking to the on-chain record (or a stellar.expert lookup when there is no settlement transaction yet). Used by the web download button and the mobile share sheet.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`."
+      summary: Download a trade receipt (PDF or JSON)
+      description: "Returns a receipt for a trade the caller is party to. The default PDF includes the trade id, parties, amount, status, and a QR code linking to the on-chain record (or a stellar.expert lookup when there is no settlement transaction yet). Pass `?format=json` for the same snapshot as a machine-readable document. Used by the web download button, the mobile share sheet, and integrations.\nError code references: `AUTH_ERROR`, `VALIDATION_ERROR`, `DOMAIN_ERROR`, `NOT_FOUND`, `INTERNAL_ERROR`."
       security:
         - bearerAuth: []
       parameters:
         - $ref: "#/components/parameters/TradeIdPath"
+        - name: format
+          in: query
+          required: false
+          description: Receipt encoding. Defaults to pdf.
+          schema:
+            type: string
+            enum: [pdf, json]
+            default: pdf
       responses:
         "200":
-          description: Trade receipt PDF returned.
+          description: Trade receipt returned as a PDF (default) or JSON document.
           content:
             application/pdf:
               schema:
                 type: string
                 format: binary
+            application/json:
+              schema:
+                type: object
+                required:
+                  - tradeId
+                  - buyerAddress
+                  - sellerAddress
+                  - amountUsdc
+                  - status
+                  - createdAt
+                  - completedAt
+                  - txHash
+                  - onChainRecordUrl
+                  - network
+                properties:
+                  tradeId:
+                    type: string
+                  buyerAddress:
+                    type: string
+                  sellerAddress:
+                    type: string
+                  amountUsdc:
+                    type: string
+                  status:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+                  completedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  txHash:
+                    type: string
+                    nullable: true
+                  onChainRecordUrl:
+                    type: string
+                    format: uri
+                  network:
+                    type: string
+                    enum: [mainnet, testnet]
         "400":
           $ref: "#/components/responses/LegacyValidationError"
         "401":
